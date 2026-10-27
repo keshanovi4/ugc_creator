@@ -31,7 +31,7 @@ export async function verifyPublic(url,fetcher=fetch){
 }
 export async function configureBot(s,url,fetcher=fetch){
  await verifyPublic(url,fetcher);
- await botCall(s,'setMyCommands',{commands:[{command:'start',description:'Открыть UGC Studio'},{command:'status',description:'Моя заявка'},{command:'id',description:'Мой Telegram ID'},{command:'help',description:'Помощь'}]},fetcher);
- await botCall(s,'setChatMenuButton',{menu_button:{type:'web_app',text:'UGC Studio',web_app:{url}}},fetcher);
+ await botCall(s,'setMyCommands',{commands:[{command:'start',description:'Открыть SNEG'},{command:'status',description:'Моя заявка'},{command:'id',description:'Мой Telegram ID'},{command:'help',description:'Помощь'}]},fetcher);
+ await botCall(s,'setChatMenuButton',{menu_button:{type:'web_app',text:'SNEG',web_app:{url}}},fetcher);
  await botCall(s,'setWebhook',{url:url+'/telegram/webhook',secret_token:s.webhookSecret,allowed_updates:['message','callback_query'],drop_pending_updates:false},fetcher);
 }

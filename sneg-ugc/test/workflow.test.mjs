@@ -198,6 +198,38 @@ test('HTTP: приватность, Origin, webhook, запрет демо-об�
  const {store,c}=setup({demo:false,pilot:true,botToken:'test-token',adminIds:[manager.id],webhookSecret:'test-webhook-secret-123456789',sessionSecret:'test-session-secret-1234567890123456'}),app=createApp(c,store);await new Promise(r=>app.server.listen(0,'127.0.0.1',r));const base='http://127.0.0.1:'+app.server.address().port;
  try{assert.equal((await fetch(base+'/')).status,200);assert.equal((await fetch(base+'/api/overview',{headers:{'x-demo-role':'manager'}})).status,401);assert.equal((await fetch(base+'/telegram/webhook',{method:'POST',headers:{'content-type':'application/json'},body:'{}'})).status,403);const cookie='ugc_session='+session(manager,c.sessionSecret);const wrong=await fetch(base+'/api/campaign',{method:'PATCH',headers:{cookie,origin:'https://attacker.example','content-type':'application/json'},body:'{}'});assert.equal(wrong.status,403);const login=await fetch(base+'/api/auth',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({initData:signedData(c.botToken)})});assert.equal(login.status,200);assert.match(login.headers.get('set-cookie'),/HttpOnly; Secure; SameSite=Lax/);const noAccess=await fetch(base+'/api/connections',{headers:{cookie:'ugc_session='+session(user,c.sessionSecret)}});assert.equal(noAccess.status,403);const safe=await(await fetch(base+'/api/connections',{headers:{cookie}})).text();assert.ok(!safe.includes(c.botToken));}finally{await new Promise(r=>app.server.close(r));store.close();}
 });
+test('два Telegram-аккаунта в одном браузере сохраняют разные роли и свои анкеты',async()=>{
+ const {store,c,service:s}=setup({demo:false,pilot:true,botToken:'test-token',adminIds:[manager.id],sessionSecret:'test-session-secret-1234567890123456'}),app=createApp(c,store);
+ const own=add(s),other=add(s,{...user,id:'1002'});await new Promise(r=>app.server.listen(0,'127.0.0.1',r));const base='http://127.0.0.1:'+app.server.address().port;
+ try{
+  const login=async(id,cookie)=>{const r=await fetch(base+'/api/auth',{method:'POST',headers:{'content-type':'application/json',cookie},body:JSON.stringify({initData:signedData(c.botToken,{user:JSON.stringify({id:Number(id),first_name:'Аккаунт'})})})});assert.equal(r.status,200);return (await r.json()).session;};
+  const candidateCookie='ugc_session='+session(user,c.sessionSecret),managerCookie='ugc_session='+session(manager,c.sessionSecret);
+  const managerTab=await login(manager.id,candidateCookie),candidateTab=await login(user.id,managerCookie);
+  const hManager={cookie:candidateCookie,'x-ugc-session':managerTab},hCandidate={cookie:managerCookie,'x-ugc-session':candidateTab};
+  const ownerSession=await(await fetch(base+'/api/session',{headers:hManager})).json();assert.equal(ownerSession.user.id,manager.id);assert.equal(ownerSession.user.role,'admin');
+  const candidateSession=await(await fetch(base+'/api/session',{headers:hCandidate})).json();assert.equal(candidateSession.user.id,user.id);assert.equal(candidateSession.user.role,'candidate');
+  const mine=await(await fetch(base+'/api/me',{headers:hCandidate})).json();assert.deepEqual(mine.applications.map(a=>a.id),[own.id]);assert.ok(!mine.applications.some(a=>a.id===other.id));
+  assert.equal((await fetch(base+'/api/overview',{headers:hManager})).status,200);assert.equal((await fetch(base+'/api/overview',{headers:hCandidate})).status,403);
+  assert.equal((await fetch(base+'/api/session',{headers:{cookie:managerCookie,'x-ugc-session':'invalid'}})).status,401);
+  assert.equal((await fetch(base+'/api/session',{headers:{cookie:managerCookie,'x-ugc-session':session(manager,c.sessionSecret,Date.now()-86400000)}})).status,401);
+ }finally{await new Promise(r=>app.server.close(r));store.close();}
+});
+
+test('frontend проверяет текущий вход Telegram до использования общей cookie',async()=>{
+ const original={document:globalThis.document,window:globalThis.window,localStorage:globalThis.localStorage};const calls=[];
+ globalThis.document={documentElement:{dataset:{mode:'server'}}};globalThis.window={Telegram:{WebApp:{initData:'manager-launch'}}};globalThis.localStorage={getItem:()=>null};
+ try{await mockedFetch(async(path,options)=>{
+  calls.push({path,options});if(path==='/api/auth'){const data=JSON.parse(options.body);if(data.initData==='invalid-launch')return {...response({error:'Подпись не подтверждена'},false),status:401};return response({session:data.initData==='manager-launch'?'manager-session':'candidate-session'});}
+  return response({user:{role:options.headers['x-ugc-session']==='manager-session'?'admin':'candidate'},connections:{demo:false}});
+ },async()=>{
+  const {api:client}=await import('../dist/api.mjs?auth-test='+randomUUID());
+  assert.equal((await client.session()).user.role,'admin');assert.deepEqual(calls.map(c=>c.path),['/api/auth','/api/session']);
+  await client.mine();assert.equal(calls.at(-1).options.headers['x-ugc-session'],'manager-session');
+  globalThis.window.Telegram.WebApp.initData='candidate-launch';assert.equal((await client.session()).user.role,'candidate');assert.equal(calls.at(-1).options.headers['x-ugc-session'],'candidate-session');
+  globalThis.window.Telegram.WebApp.initData='invalid-launch';const before=calls.length;await assert.rejects(()=>client.session(),{status:401});assert.equal(calls.length,before+1);assert.equal(calls.at(-1).path,'/api/auth');
+  globalThis.window.Telegram.WebApp.initData='candidate-launch';const recover=calls.length;await client.session();assert.equal(calls[recover].path,'/api/auth');assert.equal(calls.at(-1).options.headers['x-ugc-session'],'candidate-session');
+ });}finally{for(const [key,value] of Object.entries(original)){if(value===undefined)delete globalThis[key];else globalThis[key]=value;}}
+});
 test('живая WAL-база копируется и восстанавливается с целостными событиями',async()=>{
  const dir=mkdtempSync(join(tmpdir(),'ugc-backup-test-'));let store,restored;
  try{store=new Store(join(dir,'ugc.sqlite'));const s=new Service(store,{demo:true,aiProvider:'rules'}),a=add(s),path=await createBackup({databasePath:join(dir,'ugc.sqlite'),backupDirectory:join(dir,'backups')});act(s,manager,a,'claim');restored=new Store(path);assert.equal(restored.app(a.id).version,a.version);assert.equal(store.app(a.id).version,a.version+1);assert.equal(restored.events(a.id).length,1);assert.equal(restored.db.prepare('PRAGMA integrity_check').get().integrity_check,'ok');}finally{restored?.close();store?.close();rmSync(dir,{recursive:true,force:true});}

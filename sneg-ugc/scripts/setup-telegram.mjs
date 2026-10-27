@@ -7,6 +7,6 @@ if(existing.result.url&&existing.result.url!==expected&&!process.argv.includes('
 const health=await fetch(config.publicUrl+'/healthz',{redirect:'error',signal:AbortSignal.timeout(10000)}),guard=await fetch(config.publicUrl+'/api/session',{redirect:'error',signal:AbortSignal.timeout(10000)});
 if(!health.ok||(await health.json()).ok!==true||guard.status!==401)throw new Error('Сначала проверьте HTTPS и вход Telegram. Настройки не изменены.');
 await telegram(config,'setWebhook',{url:config.publicUrl+'/telegram/webhook',secret_token:config.webhookSecret,allowed_updates:['message','callback_query'],drop_pending_updates:false});
-await telegram(config,'setMyCommands',{commands:[{command:'start',description:'Открыть UGC Studio'},{command:'status',description:'Моя заявка'},{command:'id',description:'Мой Telegram ID'},{command:'help',description:'Помощь'}]});
-await telegram(config,'setChatMenuButton',{menu_button:{type:'web_app',text:'UGC Studio',web_app:{url:config.publicUrl}}});
+await telegram(config,'setMyCommands',{commands:[{command:'start',description:'Открыть SNEG'},{command:'status',description:'Моя заявка'},{command:'id',description:'Мой Telegram ID'},{command:'help',description:'Помощь'}]});
+await telegram(config,'setChatMenuButton',{menu_button:{type:'web_app',text:'SNEG',web_app:{url:config.publicUrl}}});
 console.log('Webhook, commands and menu configured. Open the bot and send /start.');
