@@ -17,7 +17,9 @@ export function validateTelegram(initData,token,now=Date.now()){
  assert(Number.isSafeInteger(user?.id)&&user.id>0,'Не удалось определить пользователя',401);
  return {id:String(user.id),name:[user.first_name,user.last_name].filter(Boolean).join(' ').slice(0,100),username:String(user.username||'').slice(0,80)};
 }
-export function roleFor(id,config){if(config.adminIds.includes(id))return 'admin';if(config.managerIds.includes(id))return 'manager';return 'candidate';}
+export function roleFor(id,config,store){id=String(id);if(config.adminIds.includes(id))return 'admin';const member=store?.member(id);if(member)return member.active?'manager':'candidate';if(config.managerIds.includes(id))return 'manager';return 'candidate';}
+export function canPublish(user,store){return user.role==='admin'||user.role==='manager'&&store?.member(user.id)?.active===true&&store.member(user.id).publish===true;}
+export function teamIds(config,store){return [...new Set([...config.adminIds,...config.managerIds,...(store?.members()||[]).filter(m=>m.active).map(m=>m.id)])].filter(id=>roleFor(id,config,store)!=='candidate');}
 export function session(user,secret,now=Date.now()){
  const payload=Buffer.from(JSON.stringify({...user,exp:Math.floor(now/1000)+43200,nonce:randomBytes(12).toString('hex')})).toString('base64url');
  return payload+'.'+createHmac('sha256',secret).update(payload).digest('base64url');

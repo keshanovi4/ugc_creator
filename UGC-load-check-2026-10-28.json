@@ -1,0 +1,26 @@
+{
+  "rows": 72000,
+  "storage": "SQLite in memory",
+  "environment": "Local Windows / Node v24.22.1",
+  "synthetic": true,
+  "seedMs": 20798,
+  "timings": {
+    "queue": {
+      "medianMs": 328,
+      "maxMs": 404
+    },
+    "deepPage": {
+      "medianMs": 1266,
+      "maxMs": 1338
+    },
+    "globalSearch": {
+      "medianMs": 1336,
+      "maxMs": 1386
+    },
+    "counts": {
+      "medianMs": 401,
+      "maxMs": 414
+    }
+  },
+  "scope": "SQL queries and counts only; not an HTTP concurrency or Railway capacity test"
+}

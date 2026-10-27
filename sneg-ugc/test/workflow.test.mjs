@@ -16,11 +16,11 @@ import {createBackup} from '../scripts/backup.mjs';
 
 const user={id:'1001',role:'candidate',name:'Тестовый кандидат'};
 const manager={id:'2001',role:'admin',name:'Менеджер'};
-const input=(overrides={})=>({name:'Тестовый кандидат',city:'Алматы',language:'kk',directions:['ugc'],portfolio:['https://example.com/video'],experience:'brand',closeup:true,adult:true,terms:true,consent:true,availabilityDays:7,...overrides});
+const input=(overrides={})=>({name:'Тестовый кандидат',city:'Алматы',language:'kk',directions:['ugc'],portfolio:['https://example.com/video'],experience:'brand',closeup:true,adult:true,terms:true,consent:true,availabilityDays:7,briefVersion:DEFAULT_CAMPAIGN.briefVersion,consentVersion:DEFAULT_CAMPAIGN.consentVersion,...overrides});
 const config=(overrides={})=>({...configuration({DEMO_MODE:'true'}),...overrides});
 function setup(overrides={}){const store=new Store(),c=config(overrides),connections=new Connections(store,c);return {store,c,connections,service:new Service(store,c,connections)};}
-const add=(s,u=user,p=input())=>s.create(u,p,randomUUID()).application;
-const act=(s,u,a,action,payload={})=>s.action(u,a.id,{action,payload,version:a.version},randomUUID()).application;
+const add=(s,u=user,p=input())=>s.store.app(s.create(u,p,randomUUID()).application.id);
+const act=(s,u,a,action,payload={})=>s.store.app(s.action(u,a.id,{action,payload,version:a.version},randomUUID()).application.id);
 const response=(data,ok=true)=>({ok,json:async()=>data});
 async function mockedFetch(mock,fn){const original=globalThis.fetch;globalThis.fetch=mock;try{return await fn();}finally{globalThis.fetch=original;}}
 

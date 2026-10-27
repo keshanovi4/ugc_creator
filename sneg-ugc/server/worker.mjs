@@ -1,29 +1,33 @@
 import {telegram,analyze} from './integrations.mjs';
 import {Service} from './service.mjs';
-import {roleFor} from './auth.mjs';
+import {roleFor,teamIds} from './auth.mjs';
+import {evaluationKey,queueEvaluation} from './ai-state.mjs';
+import {Maintenance} from './maintenance.mjs';
 import {recommended,priority,canonicalStatus,LANGUAGES,text} from '../dist/domain.mjs';
 import {THREADS_GRAPH} from './connections.mjs';
 export function createWorker(store,base,connections){
- let running=false,aiRunning=false,nextAiAt=0;const service=new Service(store,base,connections),cfg=()=>connections?.config()||base;
- const ranked=()=>store.all().filter(a=>canonicalStatus(a.status)==='review').sort((a,b)=>priority(a)-priority(b)||Date.parse(a.createdAt)-Date.parse(b.createdAt));
+ let running=false,aiRunning=false,threadsRunning=false,nextAiAt=0,nextRepair=0;const maintenance=new Maintenance(store,base);const service=new Service(store,base,connections),cfg=()=>connections?.config()||base;
+ const ranked=()=>store.queryApplications({status:'review',limit:500}).applications;
+ const managers=()=>teamIds(base,store);
+ async function recipient(id,fn){if(Date.now()<Number(store.meta('delivery_retry:'+id)||0))return false;try{await fn();store.setMeta('delivery_ok:'+id,new Date().toISOString());store.setMeta('delivery_error:'+id,'');store.setMeta('delivery_retry:'+id,'0');return true;}catch(e){store.setMeta('delivery_error:'+id,/^TELEGRAM_/.test(e.message)?e.message:'TELEGRAM_UNAVAILABLE');store.setMeta('delivery_retry:'+id,Date.now()+Math.max(60000,(e.retryAfter||0)*1000));return false;}}
  const appButton=(label,view='review')=>({text:label,web_app:{url:base.publicUrl+'/?view='+view}});
  async function editable(c,manager,text,reply_markup,key){
   const saved=store.meta(key),body={chat_id:manager,text,reply_markup,disable_web_page_preview:true};
   if(saved){try{await telegram(c,'editMessageText',{...body,message_id:Number(saved)});return;}catch(e){if(e.message!=='TELEGRAM_MESSAGE_GONE')throw e;}}
   const r=await telegram(c,'sendMessage',body);if(r.result?.message_id)store.setMeta(key,r.result.message_id);
  }
- async function digest(manager){const c=cfg(),list=ranked(),top=list.slice(0,3),all=store.all();const text='SNEG · подборка креаторов\n\nНужен выбор: '+list.length+' · Уточняем: '+all.filter(a=>a.status==='clarification').length+'\n'+(top.length?'\nС чего начать:\n'+top.map((a,i)=>(i+1)+'. '+a.name+' · '+a.id+'\n'+a.city+'\n'+(a.evaluation.ai?.summary||a.evaluation.summary)).join('\n\n'):'\n'+(list.length?'Новые анкеты доступны в кабинете.':'Новых анкет пока нет.'))+'\n\n'+(c.aiProvider==='rules'?'Предварительный отбор по правилам. ИИ ещё не подключён.':'ИИ помогает с приоритетом. Решение остаётся за менеджером.');await editable(c,manager,text,{inline_keyboard:[[appButton('Открыть новые заявки','review&bucket=all_new')],[{text:'Разобрать кандидата',callback_data:'next'}]]},'digest_message:'+manager);}
+ async function digest(manager){const c=cfg(),list=ranked(),top=list.slice(0,3),counts=store.counts();const text='SNEG · подборка креаторов\n\nНужен выбор: '+counts.review+' · Уточняем: '+counts.clarification+'\n'+(top.length?'\nС чего начать:\n'+top.map((a,i)=>(i+1)+'. '+a.name+' · '+a.id+'\n'+a.city+'\n'+(a.evaluation.ai?.summary||a.evaluation.summary)).join('\n\n'):'\n'+(list.length?'Новые анкеты доступны в кабинете.':'Новых анкет пока нет.'))+'\n\n'+(c.aiProvider==='rules'?'Предварительный отбор по правилам. ИИ ещё не подключён.':'ИИ помогает с приоритетом. Решение остаётся за менеджером.');await editable(c,manager,text,{inline_keyboard:[[appButton('Открыть новые заявки','review&bucket=all_new')],[{text:'Разобрать кандидата',callback_data:'next'}]]},'digest_message:'+manager);}
  async function notifyNewApplications(){
   const c=cfg(),pending=ranked();if(!pending.length)return;
   const sequence=a=>Number(a.id.replace(/^SN-/,''))||0;
-  for(const manager of new Set([...base.adminIds,...base.managerIds])){
+  for(const manager of managers()){
    const now=Date.now(),last=Number(store.meta('intake_notice_at:'+manager)||0),retry=Number(store.meta('intake_notice_retry:'+manager)||0);
    if(now<retry||last&&now-last<900000)continue;
-   const through=Number(store.meta('intake_notice_sequence:'+manager)||0),fresh=pending.filter(a=>sequence(a)>through);if(!fresh.length)continue;
-   const title=fresh.length===1?'Новая анкета · '+fresh[0].id:'Новые анкеты: '+fresh.length;
+   const through=Number(store.meta('intake_notice_sequence:'+manager)||0),freshPage=store.queryApplications({status:'review',afterSequence:through,limit:1}),fresh=freshPage.applications,total=freshPage.total,latest=Number(store.meta('sequence')||0);if(!total)continue;
+   const title=total===1?'Новая анкета · '+fresh[0].id:'Новые анкеты: '+total;
    try{
     await telegram(c,'sendMessage',{chat_id:manager,text:title+'\n\nАнкеты уже в очереди. Откройте новые заявки или разберите кандидата прямо здесь.',reply_markup:{inline_keyboard:[[appButton('Открыть новые заявки','review&bucket=all_new')],[{text:'Разобрать кандидата',callback_data:'next'}]]}});
-    store.setMeta('intake_notice_sequence:'+manager,Math.max(...pending.map(sequence)));store.setMeta('intake_notice_at:'+manager,now);store.setMeta('intake_notice_error:'+manager,'');
+    store.setMeta('intake_notice_sequence:'+manager,latest);store.setMeta('intake_notice_at:'+manager,now);store.setMeta('intake_notice_error:'+manager,'');
    }catch(e){store.setMeta('intake_notice_error:'+manager,/^TELEGRAM_/.test(e.message)?e.message:'TELEGRAM_UNAVAILABLE');store.setMeta('intake_notice_retry:'+manager,now+Math.max(60000,(e.retryAfter||0)*1000));}
   }
  }
@@ -48,16 +52,17 @@ export function createWorker(store,base,connections){
   const index=next?(Number(store.meta('card_index:'+manager)||-1)+1)%list.length:0;store.setMeta('card_index:'+manager,index);await renderCard(manager,list[index]);
  }
  async function refreshCards(){
-  for(const manager of new Set([...base.adminIds,...base.managerIds])){
+  for(const manager of managers()){
    const id=store.meta('candidate_app:'+manager);if(!id)continue;
-   const a=store.app(id);if(!a||a.version!==Number(store.meta('candidate_version:'+manager)))await card(manager,false,id);
+   const a=store.app(id);if(!a||a.version!==Number(store.meta('candidate_version:'+manager)))await recipient(manager,()=>card(manager,false,id));
   }
  }
- async function incoming(p){const c=cfg(),u={id:p.from.id,name:p.from.name,username:p.from.username,role:roleFor(p.from.id,base)},team=['admin','manager'].includes(u.role);
+ async function incoming(p){const c=cfg(),u={id:p.from.id,name:p.from.name,username:p.from.username,role:roleFor(p.from.id,base,store)},team=['admin','manager'].includes(u.role);
+  store.setMeta('profile:'+u.id,JSON.stringify({name:u.name,username:u.username,lastSeen:new Date().toISOString()}));store.setMeta('delivery_retry:'+u.id,'0');
   if(p.callback){
    let answer='';
    if(!team)answer='Это действие доступно менеджеру';
-   else if(p.callback.data==='next')await card(u.id,true);
+   else if(p.callback.data==='next'){store.setMeta('question:'+u.id,'');await card(u.id,true);}
    else{
     const m=p.callback.data.match(/^(pick|skip|ask):([A-Z0-9-]+):(\d+)$/);
     if(m){
@@ -88,7 +93,7 @@ export function createWorker(store,base,connections){
     catch(e){if(!e.status)throw e;store.enqueue('telegram',{chatId:u.id,text:e.status===409?'Карточка изменилась. Вопрос не отправлен: откройте актуальную карточку и нажмите «Уточнить» ещё раз.':e.message,plain:true});}
     return;
    }
-   if(p.text==='/id'){store.enqueue('telegram',{chatId:u.id,text:'Ваш Telegram ID: '+u.id,plain:true});return;}await digest(u.id);return;
+   if(p.text==='/id'){store.enqueue('telegram',{chatId:u.id,text:'Ваш Telegram ID: '+u.id,plain:true});return;}if(p.text.startsWith('/start'))store.setMeta('question:'+u.id,'');await digest(u.id);return;
   }
   if(p.text.startsWith('/start')){const ref=p.text.split(/\s+/)[1],campaign=store.campaign(ref?.startsWith('c_')?ref.slice(2):undefined)||store.campaign();store.subscribe(u.id,campaign.id);store.enqueue('telegram',{chatId:u.id,text:'Привет! Это набор креаторов SNEG. Заполните короткую анкету — результат придёт сюда.',campaignId:campaign.id});return;}
   if(p.text==='/id'){store.enqueue('telegram',{chatId:u.id,text:'Ваш Telegram ID: '+u.id,plain:true});return;}
@@ -101,27 +106,29 @@ export function createWorker(store,base,connections){
   try{
    const job=store.dueJobs(new Date().toISOString(),{kind:'ai',limit:1})[0];if(!job)return;
    const c=cfg(),today=new Date().toISOString().slice(0,10),a=store.app(job.payload.appId);
-   if(c.aiProvider==='rules'||!a||a.status!=='review'){store.updateJob(job.id,'done',job.attempts);return;}
+   if(c.aiProvider==='rules'||!a||a.status!=='review'){store.updateJob(job.id,'done',job.attempts);if(a){a.evaluation.aiStatus=c.aiProvider==='rules'?'not_configured':a.evaluation.ai?'done':'paused';store.save(a);}return;}
+    const snapshot=evaluationKey(a,store.campaign(a.campaignId));if(job.payload.evaluationKey&&job.payload.evaluationKey!==snapshot){store.updateJob(job.id,'done',job.attempts);queueEvaluation(store,a,c,{force:true});return;}
    const count=Number(store.meta('ai:'+today)||0);
    if(count>=c.aiDailyLimit){store.updateJob(job.id,'pending',job.attempts,'AI_DAILY_LIMIT',new Date(Date.now()+3600000).toISOString());return;}
    try{
     nextAiAt=Date.now()+Math.max(5000,c.aiMinInterval||5000);store.setMeta('ai:'+today,count+1);const result=await analyze(a,c);
-    store.tx(()=>{const fresh=store.app(a.id);if(fresh?.status==='review'){fresh.evaluation={...fresh.evaluation,ai:result,aiStatus:'done',source:c.aiProvider,aiAt:new Date().toISOString()};fresh.version++;store.save(fresh);store.setMeta('shortlist_dirty','1');}store.updateJob(job.id,'done',job.attempts+1);});
+    store.tx(()=>{const fresh=store.app(a.id);if(fresh?.status==='review'&&evaluationKey(fresh,store.campaign(fresh.campaignId))===snapshot){fresh.evaluation={...fresh.evaluation,ai:result,aiStatus:'done',source:c.aiProvider,aiAt:new Date().toISOString()};fresh.version++;store.save(fresh);store.setMeta('shortlist_dirty','1');}store.updateJob(job.id,'done',job.attempts+1);if(fresh?.status==='review'&&evaluationKey(fresh,store.campaign(fresh.campaignId))!==snapshot)queueEvaluation(store,fresh,c,{force:true});store.setMeta('ai:last_ok',new Date().toISOString());});
    }catch(e){failJob(job,e);}
   }finally{aiRunning=false;}
  }
- async function interactiveTick(){if(running)return;running=true;try{let c=cfg();const today=new Date().toISOString().slice(0,10);if(connections&&!c.demo&&store.meta('refresh_day')!==today){store.setMeta('refresh_day',today);await connections.refresh();c=cfg();}
+ async function interactiveTick(){if(running)return;running=true;try{let c=cfg();store.setMeta('worker:interactive',new Date().toISOString());
   for(const job of store.dueJobs(new Date().toISOString(),{excludeKind:'ai',limit:4})){try{
    if(job.kind==='telegram_update')await incoming(job.payload);
    else if(job.kind==='telegram'){const p=job.payload;await telegram(c,'sendMessage',{chat_id:p.chatId,text:p.text,...(!p.plain?{reply_markup:{inline_keyboard:[[appButton('Открыть анкету / статус','apply')]]}}:{})});}
    store.updateJob(job.id,'done',job.attempts+1);
   }catch(e){failJob(job,e);}}
   if(!c.demo){await refreshCards();await notifyNewApplications();}
-  if(!c.demo&&store.meta('shortlist_dirty')==='1'&&Date.now()-Number(store.meta('shortlist_last')||0)>=300000){for(const manager of new Set([...base.adminIds,...base.managerIds]))await digest(manager);store.setMeta('shortlist_dirty','0');store.setMeta('shortlist_last',Date.now());}
-  if(!c.demo&&c.threadsToken&&c.threadsUserId)for(const p of store.posts().filter(p=>p.status==='scheduled'&&Date.parse(p.scheduledAt)<=Date.now()).slice(0,2))await publishThread(p,store,c);
+  if(!c.demo&&store.meta('shortlist_dirty')==='1'&&Date.now()-Number(store.meta('shortlist_last')||0)>=300000){for(const manager of managers()){const delivered=await recipient(manager,()=>digest(manager));store.setMeta('digest_pending:'+manager,delivered?'0':'1');}store.setMeta('shortlist_dirty','0');store.setMeta('shortlist_last',Date.now());}
+  if(!c.demo)for(const manager of managers())if(store.meta('digest_pending:'+manager)==='1'){if(await recipient(manager,()=>digest(manager)))store.setMeta('digest_pending:'+manager,'0');}
  }finally{running=false;}}
- async function tick(){await Promise.all([interactiveTick(),aiTick()]);}
- return {tick};
+ async function threadsTick(){if(threadsRunning)return;threadsRunning=true;try{let c=cfg();if(c.demo)return;const today=new Date().toISOString().slice(0,10);if(connections&&store.meta('refresh_day')!==today){await connections.refresh();store.setMeta('refresh_day',today);c=cfg();}if(c.threadsToken&&c.threadsUserId)for(const p of store.posts().filter(p=>p.status==='scheduled'&&Date.parse(p.scheduledAt)<=Date.now()).slice(0,2))await publishThread(p,store,c);store.setMeta('worker:threads',new Date().toISOString());}finally{threadsRunning=false;}}
+ async function tick(){if(Date.now()>nextRepair){nextRepair=Date.now()+60000;const rows=store.db.prepare("SELECT data FROM applications WHERE status='review' AND json_extract(data,'$.evaluation.aiStatus') IN ('pending','paused') AND NOT EXISTS(SELECT 1 FROM jobs WHERE kind='ai' AND status='pending' AND json_extract(payload,'$.appId')=applications.id) LIMIT 100").all();for(const row of rows)queueEvaluation(store,JSON.parse(row.data),cfg());}const names=['interactive','ai','threads','maintenance'];const results=await Promise.allSettled([interactiveTick(),aiTick(),threadsTick(),maintenance.tick()]);for(let i=0;i<results.length;i++)if(results[i].status==='rejected')store.setMeta('worker:error:'+names[i],new Date().toISOString()+':WORKER_ERROR');}
+ return {tick,maintenance};
 }
 async function graph(c,path,body){let r,d;try{r=await fetch(THREADS_GRAPH+'/v1.0/'+path,{method:'POST',headers:{'content-type':'application/x-www-form-urlencoded',authorization:'Bearer '+c.threadsToken},body:new URLSearchParams(body),signal:AbortSignal.timeout(20000)});d=await r.json();}catch{throw new Error('THREADS_NETWORK_ERROR');}if(!r.ok||d.error)throw new Error('THREADS_API_ERROR');return d;}
 export async function publishThread(post,store,c){

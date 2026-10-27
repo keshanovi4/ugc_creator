@@ -1,0 +1,19 @@
+{
+  "viewport": 390,
+  "scope": "Synthetic memory-only preview; no production mutations",
+  "pagination": {
+    "initial": 40,
+    "loaded": 80,
+    "afterRefresh": 40,
+    "firstBefore": "SN-0017",
+    "firstAfter": "SN-0061",
+    "originalTopMissing": true
+  },
+  "form": {
+    "portfolioBefore": "https://example.com/ugc-audit-work",
+    "portfolioAfter": "",
+    "closeupBefore": true,
+    "closeupAfter": false
+  },
+  "defaultExperience": "brand"
+}
