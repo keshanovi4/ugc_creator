@@ -8,6 +8,7 @@ export const DEFAULT_CAMPAIGN={id:'sneg-october',name:'Новая улыбка',
 export class AppError extends Error{constructor(message,status=400,code='VALIDATION'){super(message);this.status=status;this.code=code;}}
 export function assert(ok,message,status=400,code){if(!ok)throw new AppError(message,status,code);}
 export const text=(v,max=1000)=>String(v??'').trim().slice(0,max);
+export function matchesApplicationQuery(a,value){const q=text(value,100).toLowerCase();if(!q)return true;const compact=q.replace(/[\s\-–—]+/g,'');return !!compact&&String(a.id||'').toLowerCase().replace(/[\s\-–—]+/g,'').includes(compact)||[a.name,a.username,a.city].some(v=>String(v||'').toLowerCase().includes(q));}
 export function composePostText(value,link,includeForm=true){const content=text(value,1500);return includeForm&&!content.includes(link)?content+'\n\nАнкета → '+link:content;}
 export function cleanUrl(value){let u;try{u=new URL(text(value));}catch{throw new AppError('Добавьте полную ссылку с https://');}assert(u.protocol==='https:'&&!u.username&&!u.password&&u.hostname.includes('.'),'Нужна публичная HTTPS-ссылка');assert(!/^(localhost|127\.|0\.|10\.|192\.168\.|169\.254\.|\[)/i.test(u.hostname),'Добавьте публичную ссылку');u.hash='';return u.href;}
 export function normalizeApplication(input,c=DEFAULT_CAMPAIGN){

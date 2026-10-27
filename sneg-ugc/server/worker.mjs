@@ -12,7 +12,21 @@ export function createWorker(store,base,connections){
   if(saved){try{await telegram(c,'editMessageText',{...body,message_id:Number(saved)});return;}catch(e){if(e.message!=='TELEGRAM_MESSAGE_GONE')throw e;}}
   const r=await telegram(c,'sendMessage',body);if(r.result?.message_id)store.setMeta(key,r.result.message_id);
  }
- async function digest(manager){const c=cfg(),list=ranked(),top=list.filter(recommended).slice(0,3),all=store.all();const text='СНЕГ* · подборка креаторов\n\nНужен выбор: '+list.length+' · Уточняем: '+all.filter(a=>a.status==='clarification').length+'\n'+(top.length?'\nС чего начать:\n'+top.map((a,i)=>(i+1)+'. '+a.name+' · '+a.city+'\n'+(a.evaluation.ai?.summary||a.evaluation.summary)).join('\n\n'):'\n'+(list.length?'Новые анкеты доступны в кабинете.':'Новых анкет пока нет.'))+'\n\n'+(c.aiProvider==='rules'?'Предварительный отбор по правилам. ИИ ещё не подключён.':'ИИ помогает с приоритетом. Решение остаётся за менеджером.');await editable(c,manager,text,{inline_keyboard:[[appButton('Открыть отбор')],[{text:'Разобрать кандидата',callback_data:'next'}]]},'digest_message:'+manager);}
+ async function digest(manager){const c=cfg(),list=ranked(),top=list.slice(0,3),all=store.all();const text='СНЕГ* · подборка креаторов\n\nНужен выбор: '+list.length+' · Уточняем: '+all.filter(a=>a.status==='clarification').length+'\n'+(top.length?'\nС чего начать:\n'+top.map((a,i)=>(i+1)+'. '+a.name+' · '+a.id+'\n'+a.city+'\n'+(a.evaluation.ai?.summary||a.evaluation.summary)).join('\n\n'):'\n'+(list.length?'Новые анкеты доступны в кабинете.':'Новых анкет пока нет.'))+'\n\n'+(c.aiProvider==='rules'?'Предварительный отбор по правилам. ИИ ещё не подключён.':'ИИ помогает с приоритетом. Решение остаётся за менеджером.');await editable(c,manager,text,{inline_keyboard:[[appButton('Открыть новые заявки','review&bucket=all_new')],[{text:'Разобрать кандидата',callback_data:'next'}]]},'digest_message:'+manager);}
+ async function notifyNewApplications(){
+  const c=cfg(),pending=ranked();if(!pending.length)return;
+  const sequence=a=>Number(a.id.replace(/^SN-/,''))||0;
+  for(const manager of new Set([...base.adminIds,...base.managerIds])){
+   const now=Date.now(),last=Number(store.meta('intake_notice_at:'+manager)||0),retry=Number(store.meta('intake_notice_retry:'+manager)||0);
+   if(now<retry||last&&now-last<900000)continue;
+   const through=Number(store.meta('intake_notice_sequence:'+manager)||0),fresh=pending.filter(a=>sequence(a)>through);if(!fresh.length)continue;
+   const title=fresh.length===1?'Новая анкета · '+fresh[0].id:'Новые анкеты: '+fresh.length;
+   try{
+    await telegram(c,'sendMessage',{chat_id:manager,text:title+'\n\nАнкеты уже в очереди. Откройте новые заявки или разберите кандидата прямо здесь.',reply_markup:{inline_keyboard:[[appButton('Открыть новые заявки','review&bucket=all_new')],[{text:'Разобрать кандидата',callback_data:'next'}]]}});
+    store.setMeta('intake_notice_sequence:'+manager,Math.max(...pending.map(sequence)));store.setMeta('intake_notice_at:'+manager,now);store.setMeta('intake_notice_error:'+manager,'');
+   }catch(e){store.setMeta('intake_notice_error:'+manager,/^TELEGRAM_/.test(e.message)?e.message:'TELEGRAM_UNAVAILABLE');store.setMeta('intake_notice_retry:'+manager,now+Math.max(60000,(e.retryAfter||0)*1000));}
+  }
+ }
  async function renderCard(manager,a){
   const ai=a.evaluation.ai,waiting=a.status==='clarification';
   const reason=(ai?.reasons||a.evaluation.reasons||[]).slice(0,2).join('; '),unknown=(ai?.unknowns||a.evaluation.unknowns||[])[0]||'Посмотрите работу перед выбором';
@@ -102,7 +116,7 @@ export function createWorker(store,base,connections){
    else if(job.kind==='telegram'){const p=job.payload;await telegram(c,'sendMessage',{chat_id:p.chatId,text:p.text,...(!p.plain?{reply_markup:{inline_keyboard:[[appButton('Открыть анкету / статус','apply')]]}}:{})});}
    store.updateJob(job.id,'done',job.attempts+1);
   }catch(e){failJob(job,e);}}
-  if(!c.demo)await refreshCards();
+  if(!c.demo){await refreshCards();await notifyNewApplications();}
   if(!c.demo&&store.meta('shortlist_dirty')==='1'&&Date.now()-Number(store.meta('shortlist_last')||0)>=300000){for(const manager of new Set([...base.adminIds,...base.managerIds]))await digest(manager);store.setMeta('shortlist_dirty','0');store.setMeta('shortlist_last',Date.now());}
   if(!c.demo&&c.threadsToken&&c.threadsUserId)for(const p of store.posts().filter(p=>p.status==='scheduled'&&Date.parse(p.scheduledAt)<=Date.now()).slice(0,2))await publishThread(p,store,c);
  }finally{running=false;}}

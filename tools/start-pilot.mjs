@@ -20,7 +20,7 @@ try{
  const s=await readState();await checkBot(s);const webhook=await botCall(s,'getWebhookInfo');
  const previous=JSON.parse(await readFile(runtimePath,'utf8').catch(()=>'{}'));
  if(webhook.url&&webhook.url!==previous.url+'/telegram/webhook')throw new Error('BOT_ALREADY_CONNECTED_ELSEWHERE');
- if(process.argv.includes('--check')){console.log('Бот @'+s.botUsername+' проверен. Администратор подтверждён. Webhook: '+(webhook.url?'свой пилот':'не установлен')+'.');process.exit(0);}
+ if(process.argv.includes('--check')){console.log('Бот @'+s.botUsername+' проверен. Администратор подтверждён. Webhook: '+(webhook.url?'это приложение':'не установлен')+'.');process.exit(0);}
  if(provider==='microsoft')await ensureMicrosoftLogin();
  try{lock=await open(lockPath,'wx',0o600);locked=true;await lock.writeFile(String(process.pid));}catch{throw new Error('PILOT_LOCK_EXISTS');}
  await new Promise((done,reject)=>{const probe=createServer();probe.once('error',()=>reject(new Error('PORT_3100_BUSY')));probe.listen(3100,'127.0.0.1',()=>probe.close(done));});
@@ -43,10 +43,10 @@ try{
  await configureBot(s,url);
  server.stdin.write('enable-worker\n');
  await writeFile(runtimePath,JSON.stringify({url,provider,startedAt:new Date().toISOString(),pid:process.pid,ready:true},null,2),{mode:0o600});
- console.log('\nПилот запущен: '+url+'\nОткройте https://t.me/'+s.botUsername+' и отправьте /start.\nТестовая анкета открыта: используйте вымышленные данные. Threads и ИИ подключаются в кабинете.\nКомпьютер должен оставаться включённым. Для остановки — Ctrl+C.');
+ console.log('\nПриложение запущено: '+url+'\nОткройте https://t.me/'+s.botUsername+' и отправьте /start.\nКабинет менеджера и анкета кандидата открываются кнопкой бота.\nКомпьютер должен оставаться включённым. Для остановки — Ctrl+C.');
  await Promise.race(children.filter(child=>child.exitCode===null).map(child=>new Promise(done=>{child.once('exit',done);child.once('error',done);})));throw new Error('PILOT_PROCESS_STOPPED');
 }catch(e){
- const messages={PUBLIC_HTTPS_UNREACHABLE:'Адрес '+(provider==='microsoft'?'Microsoft Dev Tunnels':'Cloudflare')+' пока недоступен извне. Настройки бота не менялись.',TUNNEL_ADDRESS_UNAVAILABLE:'Не удалось получить адрес '+(provider==='microsoft'?'Microsoft Dev Tunnels':'Cloudflare')+'. Настройки бота не менялись.',BOT_TOKEN_REVOKED:'Токен больше не действует. Запустите UGC-update-token.cmd и сохраните новый токен локально.',PILOT_LOCK_EXISTS:'Уже есть файл блокировки пилота. Не запускайте второй экземпляр. Если предыдущий процесс точно остановлен, удалите только sneg-ugc/data/pilot.lock.',BOT_ALREADY_CONNECTED_ELSEWHERE:'У бота уже есть другое подключение. Оно не изменено.',PORT_3100_BUSY:'Порт 3100 занят. Остановите предыдущий пилот.',TELEGRAM_NETWORK_ERROR:'Нет соединения с Telegram. Токен в ошибку не выводится.',DEVTUNNEL_LOGIN_FAILED:'Вход GitHub не завершён. Запустите файл ещё раз и подтвердите код на GitHub.',DEVTUNNEL_NOT_AVAILABLE:'Не найден официальный клиент tools/devtunnel.exe.'};
+ const messages={PUBLIC_HTTPS_UNREACHABLE:'Адрес '+(provider==='microsoft'?'Microsoft Dev Tunnels':'Cloudflare')+' пока недоступен извне. Настройки бота не менялись.',TUNNEL_ADDRESS_UNAVAILABLE:'Не удалось получить адрес '+(provider==='microsoft'?'Microsoft Dev Tunnels':'Cloudflare')+'. Настройки бота не менялись.',BOT_TOKEN_REVOKED:'Токен больше не действует. Запустите UGC-update-token.cmd и сохраните новый токен локально.',PILOT_LOCK_EXISTS:'Уже есть файл блокировки приложения. Не запускайте второй экземпляр. Если предыдущий процесс точно остановлен, удалите только sneg-ugc/data/pilot.lock.',BOT_ALREADY_CONNECTED_ELSEWHERE:'У бота уже есть другое подключение. Оно не изменено.',PORT_3100_BUSY:'Порт 3100 занят. Остановите предыдущий запуск.',TELEGRAM_NETWORK_ERROR:'Нет соединения с Telegram. Токен в ошибку не выводится.',DEVTUNNEL_LOGIN_FAILED:'Вход GitHub не завершён. Запустите файл ещё раз и подтвердите код на GitHub.',DEVTUNNEL_NOT_AVAILABLE:'Не найден официальный клиент tools/devtunnel.exe.'};
  const code=/^[A-Z0-9_]+$/.test(e.code||'')?e.code:(/^[A-Z0-9_]+$/.test(e.message)?e.message:'PILOT_SETUP_ERROR');
  console.error(messages[e.message]||'Запуск остановлен: '+code);process.exitCode=1;
 }finally{await cleanup();}

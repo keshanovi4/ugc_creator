@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {randomUUID,createHmac} from 'node:crypto';
-import {mkdtempSync,rmSync} from 'node:fs';
+import {mkdtempSync,rmSync,existsSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {Store} from '../server/store.mjs';
@@ -89,14 +89,69 @@ test('бот не доверяет callback кандидата, менеджер
   assert.equal(store.app(a.id).status,'approved');assert.equal(store.events(a.id).filter(e=>e.type==='approve').length,1);assert.ok(calls.some(x=>x.body.text?.includes('доступно менеджеру')));
  }finally{store.close();}
 });
-test('400 анкет дают одну подборку, затем редактируется то же сообщение',async()=>{
+test('400 анкет дают одно уведомление и одну обновляемую подборку',async()=>{
  const {store,service:s,c}=setup({demo:false,pilot:true,adminIds:[manager.id],botToken:'test-token'}),calls=[];
  try{for(let i=0;i<400;i++)add(s,{...user,id:String(10000+i)});
-  // Candidate confirmations are individual; the manager gets a single digest.
+  // Candidate confirmations are individual; the manager gets one notice for the batch and one editable digest.
   store.db.prepare("UPDATE jobs SET status='done'").run();const worker=createWorker(store,c);
   await mockedFetch(async(url,opts)=>{calls.push({url:String(url),body:JSON.parse(opts.body)});return response({ok:true,result:{message_id:55}});},async()=>{await worker.tick();await worker.tick();store.setMeta('shortlist_dirty','1');store.setMeta('shortlist_last','0');await worker.tick();});
-  assert.equal(calls.filter(x=>x.url.endsWith('/sendMessage')).length,1);assert.equal(calls.filter(x=>x.url.endsWith('/editMessageText')).length,1);assert.equal(calls[1].body.message_id,55);assert.equal(s.list(manager,{offset:360,limit:60}).applications.length,40);assert.equal(s.overview(manager).total,400);
+  assert.equal(calls.filter(x=>x.url.endsWith('/sendMessage')).length,2);assert.equal(calls.filter(x=>x.body.text.startsWith('Новые анкеты:')).length,1);assert.equal(calls.filter(x=>x.url.endsWith('/editMessageText')).length,1);assert.equal(calls.at(-1).body.message_id,55);assert.equal(s.list(manager,{offset:360,limit:60}).applications.length,40);assert.equal(s.overview(manager).total,400);
  }finally{store.close();}
+});
+
+test('поиск SN 0002 находит анкету с уточнением, даже из выбранных и рекомендаций',()=>{
+ const {store,service:s}=setup();try{
+  let first=add(s);act(s,manager,first,'approve',{portfolioReviewed:true});
+  const second=add(s,{...user,id:'1002'});second.evaluation.ai={recommendation:'clarify',summary:'Попросить другой пример'};store.save(second);
+  assert.equal(s.list(manager,{bucket:'recommended'}).total,0);
+  for(const q of ['SN 0002','sn0002','SN-0002']){
+   const found=s.list(manager,{q,bucket:'selected',queue:'approved',direction:'reach'});assert.equal(found.total,1);assert.equal(found.applications[0].id,second.id);
+  }
+  assert.equal(s.list(manager,{bucket:'all_new'}).applications[0].id,second.id);
+ }finally{store.close();}
+});
+
+test('новые анкеты уведомляют сразу, затем собираются в одно сообщение за 15 минут',async()=>{
+ const {store,service:s,c}=setup({demo:false,pilot:true,adminIds:[manager.id],botToken:'test-token'}),calls=[],clock=Date.now;let now=clock();Date.now=()=>now;
+ try{
+  add(s);store.db.prepare("UPDATE jobs SET status='done'").run();const worker=createWorker(store,c);
+  await mockedFetch(async(url,opts)=>{calls.push(JSON.parse(opts.body));return response({ok:true,result:{message_id:56}});},async()=>{
+   await worker.tick();assert.equal(calls.filter(x=>x.text.startsWith('Новая анкета')).length,1);
+   add(s,{...user,id:'1002'});add(s,{...user,id:'1003'});store.db.prepare("UPDATE jobs SET status='done'").run();
+   now+=899999;await worker.tick();assert.equal(calls.filter(x=>x.text.startsWith('Новые анкеты')).length,0);
+   now+=1;await worker.tick();await worker.tick();assert.equal(calls.filter(x=>x.text.startsWith('Новые анкеты: 2')).length,1);
+  });
+  assert.equal(store.meta('intake_notice_sequence:'+manager.id),'3');
+ }finally{Date.now=clock;store.close();}
+});
+
+test('ошибка уведомления повторяется с паузой и не блокирует выбор менеджера',async()=>{
+ const {store,service:s,c}=setup({demo:false,pilot:true,adminIds:[manager.id],botToken:'test-token'}),clock=Date.now;let now=clock(),attempts=0;Date.now=()=>now;
+ try{
+  const a=add(s),b=add(s,{...user,id:'1002'});store.db.prepare("UPDATE jobs SET status='done'").run();const worker=createWorker(store,c);
+  await mockedFetch(async(url,opts)=>{
+   const body=JSON.parse(opts.body);if(body.text?.startsWith('Новые анкеты')||body.text?.startsWith('Новая анкета')){attempts++;if(attempts===1)return response({ok:false,error_code:429,parameters:{retry_after:60}},false);}return response({ok:true,result:{message_id:57}});
+  },async()=>{
+   await worker.tick();assert.equal(attempts,1);
+   queueTelegramUpdate(store,{update_id:100006,callback_query:{id:'notice-failed',from:{id:Number(manager.id)},message:{chat:{type:'private'}},data:'pick:'+a.id+':'+a.version}});
+   await worker.tick();assert.equal(store.app(a.id).status,'approved');assert.equal(store.app(b.id).status,'review');assert.equal(attempts,1);assert.equal(store.meta('intake_notice_sequence:'+manager.id),undefined);
+   now+=60000;await worker.tick();
+  });
+  assert.equal(attempts,2);assert.equal(store.meta('intake_notice_sequence:'+manager.id),'2');
+ }finally{Date.now=clock;store.close();}
+});
+
+test('старый адрес только перенаправляет: база не открывается, POST и старый API отклоняются',async()=>{
+ const dir=mkdtempSync(join(tmpdir(),'ugc-alias-')),databasePath=join(dir,'should-not-exist.sqlite');
+ const c=configuration({NODE_ENV:'production',PUBLIC_URL:'https://old.example',CANONICAL_URL:'https://current.example',DATABASE_PATH:databasePath}),app=createApp(c);
+ await new Promise(r=>app.server.listen(0,'127.0.0.1',r));const base='http://127.0.0.1:'+app.server.address().port;
+ try{
+  const r=await fetch(base+'/?view=review&candidate=SN-0002',{redirect:'manual'});assert.equal(r.status,302);assert.equal(r.headers.get('location'),'https://current.example/?view=review&candidate=SN-0002');
+  assert.equal((await fetch(base+'/api/applications')).status,409);
+  assert.equal((await fetch(base+'/telegram/webhook',{method:'POST',body:'{}'})).status,409);
+  assert.deepEqual(await(await fetch(base+'/healthz')).json(),{ok:true,forwarding:true});await app.worker.tick();assert.equal(app.store,null);assert.equal(existsSync(databasePath),false);
+  for(const target of ['http://current.example','https://old.example','https://name:secret@current.example','https://current.example/path'])assert.throws(()=>configuration({NODE_ENV:'production',PUBLIC_URL:'https://old.example',CANONICAL_URL:target}));
+ }finally{await new Promise(r=>app.server.close(r));rmSync(dir,{recursive:true,force:true});}
 });
 test('в модель не передаются имя, контакты, ссылки, заметка и подписчики UGC',()=>{
  const a={...normalizeApplication(input({note:'Секретная информация',followers:500})),telegramId:'12345',username:'private',evaluation:{eligible:true}},facts=JSON.stringify(aiFacts(a));
