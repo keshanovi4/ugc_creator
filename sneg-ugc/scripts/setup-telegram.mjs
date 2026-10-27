@@ -1,0 +1,12 @@
+import {configuration} from '../server/index.mjs';
+import {telegram} from '../server/integrations.mjs';
+const config=configuration();if(config.demo)throw new Error('Configure production .env first. DEMO_MODE must be false.');
+const me=await telegram(config,'getMe',{});console.log('Configuring @'+me.result.username);
+const expected=config.publicUrl+'/telegram/webhook',existing=await telegram(config,'getWebhookInfo',{});
+if(existing.result.url&&existing.result.url!==expected&&!process.argv.includes('--replace-webhook'))throw new Error('Другой webhook сохранён. Для осознанного переноса используйте --replace-webhook.');
+const health=await fetch(config.publicUrl+'/healthz',{redirect:'error',signal:AbortSignal.timeout(10000)}),guard=await fetch(config.publicUrl+'/api/session',{redirect:'error',signal:AbortSignal.timeout(10000)});
+if(!health.ok||(await health.json()).ok!==true||guard.status!==401)throw new Error('Сначала проверьте HTTPS и вход Telegram. Настройки не изменены.');
+await telegram(config,'setWebhook',{url:config.publicUrl+'/telegram/webhook',secret_token:config.webhookSecret,allowed_updates:['message','callback_query'],drop_pending_updates:false});
+await telegram(config,'setMyCommands',{commands:[{command:'start',description:'Открыть UGC Studio'},{command:'status',description:'Моя заявка'},{command:'id',description:'Мой Telegram ID'},{command:'help',description:'Помощь'}]});
+await telegram(config,'setChatMenuButton',{menu_button:{type:'web_app',text:'UGC Studio',web_app:{url:config.publicUrl}}});
+console.log('Webhook, commands and menu configured. Open the bot and send /start.');

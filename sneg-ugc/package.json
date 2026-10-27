@@ -1,0 +1,14 @@
+{
+  "name": "sneg-ugc-studio",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {"node": ">=24.2"},
+  "scripts": {
+    "start": "node --env-file-if-exists=.env server/index.mjs",
+    "test": "node --test --test-isolation=none test/*.test.mjs",
+    "build": "node scripts/build.mjs",
+    "backup": "node --env-file-if-exists=.env scripts/backup.mjs",
+    "telegram:setup": "node --env-file-if-exists=.env scripts/setup-telegram.mjs"
+  }
+}
