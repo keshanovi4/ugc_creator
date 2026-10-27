@@ -55,6 +55,7 @@ node --test --test-isolation=none tools/pilot.test.mjs
 - [Threads и Gemini: настройка владельца](sneg-ugc/OWNER-CHECKLIST.md)
 - [Постоянное размещение](sneg-ugc/DEPLOY.md)
 - [Вариант Railway](sneg-ugc/RAILWAY.md)
+- [Тестовый запуск Fly.io](sneg-ugc/FLY.md)
 - [Локальный пилот Windows](UGC-pilot-launch.md)
 
 `UGC-start-pilot.cmd` запускает уже настроенный локальный пилот. Для него отдельно нужны официальный клиент Microsoft Dev Tunnels в `tools/devtunnel.exe` и приватный файл `sneg-ugc/data/pilot-setup.json`; эти файлы не входят в репозиторий. Для нового окружения используйте конфигурацию `.env` и инструкцию размещения. Компьютер локального пилота должен оставаться включённым; постоянный хостинг настраивается отдельно.
