@@ -264,7 +264,7 @@ test('400 ожидающих ИИ не задерживают кнопку ме�
    calls.push({url:String(url),body:JSON.parse(opts.body)});return response({ok:true,result:{message_id:51}});
   },async()=>{
    firstTick=worker.tick();await started;await new Promise(r=>setImmediate(r));
-   queueTelegramUpdate(store,{update_id:100001,callback_query:{id:'responsive-button',from:{id:Number(manager.id)},message:{chat:{type:'private'}},data:'pick:'+target.id+':'+target.version}});
+   queueTelegramUpdate(store,{update_id:100001,callback_query:{id:'responsive-button',from:{id:Number(manager.id)},message:{chat:{type:'private'}},data:'pick:'+target.id+':'+store.app(target.id).version}});
    await worker.tick();assert.equal(store.app(target.id).status,'approved');const version=store.app(target.id).version;
    assert.ok(calls.some(x=>x.url.endsWith('/answerCallbackQuery')&&x.body.callback_query_id==='responsive-button'));assert.equal(modelCalls,1);
    releaseModel(response({response:JSON.stringify({recommendation:'clarify',summary:'Поздняя оценка',reasons:[],unknowns:[],question:''})}));await firstTick;
@@ -286,7 +286,7 @@ test('устаревший вопрос менеджера не уходит д�
  const {store,service:s,c}=setup({adminIds:[manager.id]});try{
   const a=add(s);store.setMeta('question:'+manager.id,JSON.stringify({id:a.id,version:a.version,at:Date.now()}));act(s,manager,a,'claim');
   queueTelegramUpdate(store,{update_id:100003,message:{from:{id:Number(manager.id)},chat:{type:'private'},text:'Есть ли ещё пример ролика?'}});
-  await createWorker(store,c).tick();assert.equal(store.app(a.id).status,'review');assert.equal(store.meta('question:'+manager.id),'');
+  await createWorker(store,c).tick();assert.equal(store.app(a.id).status,'review');assert.ok(JSON.parse(store.meta('question:'+manager.id)).savedText);
   const jobs=store.db.prepare('SELECT kind,status,payload FROM jobs').all();assert.ok(jobs.some(x=>x.kind==='telegram'&&JSON.parse(x.payload).text.includes('Вопрос не отправлен')));assert.ok(jobs.filter(x=>x.kind==='telegram_update').every(x=>x.status==='done'));
  }finally{store.close();}
 });
@@ -321,7 +321,7 @@ test('открытая карточка сама обновляет ожидан
  try{let a=add(s);store.setMeta('candidate_message:'+manager.id,'61');const worker=createWorker(store,c);
   queueTelegramUpdate(store,{update_id:100005,callback_query:{id:'open-live-card',from:{id:Number(manager.id)},message:{chat:{type:'private'}},data:'next'}});
   await mockedFetch(async(url,opts)=>{calls.push({url:String(url),body:JSON.parse(opts.body)});return response({ok:true,result:{message_id:62}});},async()=>{
-   await worker.tick();calls.length=0;a=act(s,manager,a,'clarify',{question:'Готовы снять разговорный ролик?'});await worker.tick();
+   await worker.tick();calls.length=0;a=act(s,manager,store.app(a.id),'clarify',{question:'Готовы снять разговорный ролик?'});await worker.tick();
    const waiting=calls.find(x=>x.body.message_id===61);assert.ok(waiting.body.text.includes('Ждём ответ на вопрос'));assert.ok(!JSON.stringify(waiting.body.reply_markup).includes('pick:'));
    calls.length=0;a=act(s,user,a,'answer',{answer:'Да, готов(а).'});await worker.tick();
    const answered=calls.find(x=>x.body.message_id===61);assert.ok(answered.body.text.includes('Ответ кандидата: Да, готов(а).'));assert.ok(JSON.stringify(answered.body.reply_markup).includes('pick:'+a.id+':'+a.version));

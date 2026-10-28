@@ -29,8 +29,8 @@ export class Maintenance{
     const ids=this.store.db.prepare("SELECT id,telegram_id FROM applications WHERE campaign_id=? AND status IN ('rejected','withdrawn','sent') AND updated_at<?").all(c.id,until);
     for(const {id,telegram_id} of ids){
      this.store.db.prepare('DELETE FROM events WHERE app_id=?').run(id);
-     this.store.db.prepare("DELETE FROM jobs WHERE json_extract(payload,'$.appId')=? OR json_extract(payload,'$.chatId')=? OR json_extract(payload,'$.from.id')=?").run(id,telegram_id,telegram_id);
-     this.store.db.prepare('DELETE FROM idempotency WHERE scope=?').run(telegram_id);
+     this.store.db.prepare("DELETE FROM jobs WHERE json_extract(payload,'$.appId')=? OR (json_extract(payload,'$.chatId')=? AND json_extract(payload,'$.campaignId')=?)").run(id,telegram_id,c.id);
+     this.store.db.prepare("DELETE FROM idempotency WHERE scope=? AND json_extract(result,'$.application.id')=?").run(telegram_id,id);
      this.store.db.prepare('DELETE FROM applications WHERE id=?').run(id);
      if(!this.store.db.prepare('SELECT 1 FROM applications WHERE telegram_id=?').get(telegram_id)){this.store.db.prepare('DELETE FROM subscribers WHERE telegram_id=?').run(telegram_id);this.store.db.prepare('DELETE FROM meta WHERE key=?').run('profile:'+telegram_id);}
     }
@@ -42,6 +42,6 @@ export class Maintenance{
   if(this.running||!this.config.production||this.store.path===':memory:'||Date.now()<this.next)return;
   this.running=true;this.next=Date.now()+60000;
   try{const last=JSON.parse(this.store.meta('backup:last')||'{}');if(!last.at||Date.now()-Date.parse(last.at)>86400000)await this.createBackup();const clean=this.store.meta('maintenance:last');if(!clean||Date.now()-Date.parse(clean)>86400000)this.clean();}
-  catch{this.store.setMeta('backup:error','BACKUP_OR_MAINTENANCE_FAILED');}finally{this.running=false;}
+  catch{this.store.setMeta('backup:error','BACKUP_OR_MAINTENANCE_FAILED');throw Error('BACKUP_OR_MAINTENANCE_FAILED');}finally{this.running=false;}
  }
 }

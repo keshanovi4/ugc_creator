@@ -63,7 +63,7 @@ test('ежедневная копия проверяется; очистка з�
 });
 test('ручная сверка needs_check возвращает черновик, повтор не публикует его',async()=>{
  const {store,config}=setup();store.savePost({id:'post',status:'needs_check',campaignId:DEFAULT_CAMPAIGN.id,text:'Тест'});const app=createApp(config,store);await new Promise(r=>app.server.listen(0,'127.0.0.1',r));const base='http://127.0.0.1:'+app.server.address().port;
- try{let r=await fetch(base+'/api/posts/post/resolve',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({outcome:'absent',confirmed:true})});assert.equal(r.status,200);assert.equal(store.posts()[0].status,'draft');r=await fetch(base+'/api/posts/post/resolve',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({outcome:'absent',confirmed:true})});assert.equal(r.status,409);}finally{await new Promise(r=>app.server.close(r));store.close();}
+ try{let r=await fetch(base+'/api/posts/post/resolve',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({outcome:'absent',confirmed:true,version:1})});assert.equal(r.status,200);assert.equal(store.posts()[0].status,'draft');r=await fetch(base+'/api/posts/post/resolve',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({outcome:'absent',confirmed:true,version:1})});assert.equal(r.status,409);}finally{await new Promise(r=>app.server.close(r));store.close();}
 });
 
 test('SNEG открывает набор с коротким объяснением без внешней политики',()=>{
@@ -75,7 +75,7 @@ test('смена критериев пересчитывает каждую ан
 });
 
 test('сохранённая операция защищена от другого текста и повторов после редактирования',()=>{
- const {store,service:s}=setup();try{const payload={text:'Первая версия публикации',operationId:randomUUID()},first=s.savePost(owner,payload,randomUUID());assert.throws(()=>s.savePost(owner,{...payload,text:'Другой текст'},randomUUID()),{code:'OPERATION_CONFLICT'});s.savePost(owner,{...payload,id:first.post.id,text:'Вторая версия публикации',operationId:randomUUID()},randomUUID());const retry=s.savePost(owner,payload,randomUUID());assert.ok(retry.post.text.startsWith('Вторая версия публикации'));assert.equal(store.posts().length,1);}finally{store.close();}
+ const {store,service:s}=setup();try{const payload={text:'Первая версия публикации',operationId:randomUUID()},first=s.savePost(owner,payload,randomUUID());assert.throws(()=>s.savePost(owner,{...payload,text:'Другой текст'},randomUUID()),{code:'OPERATION_CONFLICT'});s.savePost(owner,{...payload,id:first.post.id,version:first.post.version,text:'Вторая версия публикации',operationId:randomUUID()},randomUUID());const retry=s.savePost(owner,payload,randomUUID());assert.ok(retry.post.text.startsWith('Вторая версия публикации'));assert.equal(store.posts().length,1);}finally{store.close();}
 });
 
 test('список публикаций использует часовой пояс устройства во всех проверенных зонах',()=>{
@@ -88,7 +88,7 @@ test('выдача и отзыв прав применяются к уже от�
 });
 
 test('сверка опубликованного поста проверяет ссылку среди публикаций подключённого профиля',async()=>{
- const {store,config}=setup({threadsToken:'fake',threadsUserId:'own-account'}),app=createApp(config,store);store.savePost({id:'post',status:'needs_check',text:'Тест'});app.connections.graph=async(path)=>{assert.ok(path.includes('/own-account/threads'));return {data:[{id:'own-post',permalink:'https://www.threads.com/@test/post/own'}]};};await new Promise(r=>app.server.listen(0,'127.0.0.1',r));const base='http://127.0.0.1:'+app.server.address().port,send=permalink=>fetch(base+'/api/posts/post/resolve',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({outcome:'published',permalink,confirmed:true})});
+ const {store,config}=setup({threadsToken:'fake',threadsUserId:'own-account'}),app=createApp(config,store);store.savePost({id:'post',status:'needs_check',text:'Тест'});app.connections.graph=async(path)=>{assert.ok(path.includes('/own-account/threads'));return {data:[{id:'own-post',permalink:'https://www.threads.com/@test/post/own'}]};};await new Promise(r=>app.server.listen(0,'127.0.0.1',r));const base='http://127.0.0.1:'+app.server.address().port,send=permalink=>fetch(base+'/api/posts/post/resolve',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({outcome:'published',permalink,confirmed:true,version:1})});
  try{assert.equal((await send('invalid')).status,400);assert.equal((await send('https://www.threads.com/@other/post/foreign')).status,400);assert.equal(store.posts().find(p=>p.id==='post').status,'needs_check');assert.equal((await send('https://www.threads.com/@test/post/own')).status,200);assert.equal(store.posts().find(p=>p.id==='post').remoteId,'own-post');}finally{await new Promise(r=>app.server.close(r));store.close();}
 });
 

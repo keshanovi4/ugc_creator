@@ -1,0 +1,40 @@
+{
+  "commit": "f92a870",
+  "date": "2026-10-28",
+  "scope": "Browser against isolated memory-only preview on localhost:4210; no production mutations",
+  "mineSearch": {
+    "mineChecked": true,
+    "search": "Дарья",
+    "ownAssignment": "SN-0017",
+    "beforeRefresh": ["SN-0002", "SN-0026", "SN-0014"],
+    "afterRefresh": [],
+    "screenshot": "sneg-ugc/screenshots/audit2-mine-before-refresh.png"
+  },
+  "drawerPolling": {
+    "application": "SN-0017",
+    "before": {"noteExpanded": true, "focus": "note textarea", "unsavedText": "Несохранённая заметка менеджера"},
+    "afterVersionChange": {"noteExpanded": false, "focus": "web area", "textPreservedWhenReopened": true},
+    "screenshot": "sneg-ugc/screenshots/audit2-note-after-update.png"
+  },
+  "candidateEditConcurrency": {
+    "application": "SN-0033",
+    "openedVersion": 1,
+    "unsavedFirstWindow": {"name": "Правка старого окна", "city": "Алматы"},
+    "otherWindowSaved": {"version": 2, "name": "Правка второго окна", "city": "Астана"},
+    "afterRefreshAndSubmitFirstWindow": {"version": 3, "name": "Правка старого окна", "city": "Алматы", "conflictShown": false}
+  },
+  "postEditor": {
+    "action": "Edit existing draft",
+    "headingAfterEdit": "Новый пост",
+    "exitEditingActionVisible": false,
+    "persistedDraftIdIsExisting": true,
+    "evidenceType": "Browser heading/actions plus app.mjs data-edit-post handler",
+    "screenshot": "sneg-ugc/screenshots/audit2-post-edit-labelled-new.png"
+  },
+  "mobile": {
+    "width": 390,
+    "visibleFrameHeight": 640,
+    "fullyVisibleCandidatesAtTop": 1,
+    "screenshot": "sneg-ugc/screenshots/audit2-mobile-390.png"
+  }
+}

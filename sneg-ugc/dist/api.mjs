@@ -36,7 +36,7 @@ export const api={
  async updateCampaign(data){if(!STATIC)return request('/campaign','PATCH',data);memory.campaign={...memory.campaign,...data};persist();return {campaign:memory.campaign};},
  async posts(){return STATIC?{posts:memory.posts}:request('/posts');},
  async savePost(data){if(!STATIC)return request('/posts','POST',data);assert(data.status!=='scheduled','В демонстрации нет настоящего подключения Threads');const content=composePostText(data.text,'https://t.me/sneg_ugc_bot?start=c_sneg-october',data.includeForm!==false);assert([...content].length>=10&&[...content].length<=500,'В Threads можно до 500 символов вместе со ссылкой');const post={...data,text:content,id:data.id||crypto.randomUUID(),status:'draft',createdAt:new Date().toISOString()};memory.posts=[post,...memory.posts.filter(p=>p.id!==post.id)];persist();return {post};},
- async postAction(id,action){assert(!STATIC,'Публикация доступна в рабочем кабинете');return request('/posts/'+id+'/'+action,'POST',{});},
+ async postAction(id,action,version,accountId){assert(!STATIC,'Публикация доступна в рабочем кабинете');return request('/posts/'+id+'/'+action,'POST',{version,accountId});},
  async connections(){return STATIC?{connections:demoConnections(),jobs:[]}:request('/connections');},
  async integrate(kind,data){assert(!STATIC&&!api.localDemo,'Подключите сервис в рабочем кабинете Telegram');return request('/integrations/'+kind,'POST',data);},
  async team(){return request('/team');},

@@ -1,0 +1,108 @@
+{
+  "commit": "f92a870",
+  "date": "2026-10-28",
+  "scope": "Synthetic memory stores only; no production mutations; no real external messages or publications",
+  "results": [
+    {
+      "id": "CRITERIA_WAITING_REENTRY",
+      "reproduced": true,
+      "detail": {
+        "views": 1500,
+        "currentThreshold": 100000,
+        "reach": "recommended",
+        "oldAI": "Old criteria",
+        "status": "review"
+      }
+    },
+    {
+      "id": "PUBLISH_IGNORES_REVIEWED_VERSION",
+      "reproduced": true,
+      "detail": {
+        "reviewedVersion": 1,
+        "currentVersion": 2,
+        "response": 200,
+        "scheduledText": "Version two not reviewed",
+        "status": "scheduled",
+        "externalRequests": 0
+      }
+    },
+    {
+      "id": "CANCEL_DOES_NOT_INVALIDATE_EDITOR",
+      "reproduced": true,
+      "detail": {
+        "originalVersion": 1,
+        "cancelVersion": 1,
+        "oldEditorAccepted": true,
+        "resultStatus": "scheduled"
+      }
+    },
+    {
+      "id": "RULES_MODE_RETAINS_AI_FILTER",
+      "reproduced": true,
+      "detail": {
+        "provider": "rules",
+        "rulesUGC": "recommended",
+        "oldAI": "pass",
+        "recommendedCount": 0
+      }
+    },
+    {
+      "id": "DISABLED_AI_INFLIGHT_RESULT_APPLIES",
+      "reproduced": true,
+      "detail": {
+        "provider": "rules",
+        "appliedAI": "Late AI result"
+      }
+    },
+    {
+      "id": "BOT_SHOWS_ANOTHER_MANAGERS_ASSIGNED_CARD",
+      "reproduced": true,
+      "detail": {
+        "assignedOwner": "3001",
+        "receivingManager": "3002",
+        "offeredApplication": "SN-0001",
+        "showsOwnership": false,
+        "showsSelectButton": true
+      }
+    },
+    {
+      "id": "INVALID_QUESTION_LOSES_COMPOSITION_STATE",
+      "reproduced": true,
+      "detail": {
+        "pendingAfterInvalid": "",
+        "correctedQuestionDelivered": false,
+        "status": "review"
+      }
+    },
+    {
+      "id": "WITHDRAW_SELECTED_NO_MANAGER_NOTIFICATION",
+      "reproduced": true,
+      "detail": {
+        "from": "approved",
+        "to": "withdrawn",
+        "newNotificationJobs": 0
+      }
+    },
+    {
+      "id": "WORKER_ERROR_HIDDEN_BY_FRESH_HEARTBEAT",
+      "reproduced": true,
+      "detail": {
+        "http": 200,
+        "errorRecordedInMeta": true,
+        "reportedLastWorker": "2026-10-28T07:45:58.211Z",
+        "reportedJobs": 0,
+        "workerErrorExposed": false
+      }
+    },
+    {
+      "id": "MUTED_TEXT_CONTRAST",
+      "reproduced": true,
+      "detail": {
+        "foreground": "#777d72",
+        "background": "#f3f0e8",
+        "ratio": 3.717173864016534,
+        "requiredNormalText": 4.5
+      }
+    }
+  ]
+}

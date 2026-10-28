@@ -82,7 +82,9 @@ export class Store{
    if(q.bucket==='recommended')where.push('rec=1');
    if(q.direction){where.push("EXISTS(SELECT 1 FROM json_each(json_extract(data,'$.directions')) WHERE value=:direction)");v.direction=q.direction;}
   }
-  if(q.owner){where.push("json_extract(data,'$.owner')=:owner");v.owner=String(q.owner);}
+  if(q.owner==='unassigned')where.push("COALESCE(json_extract(data,'$.owner'),'')=''");
+  else if(q.owner){where.push("json_extract(data,'$.owner')=:owner");v.owner=String(q.owner);}
+  if(q.availableTo){where.push("(COALESCE(json_extract(data,'$.owner'),'')='' OR json_extract(data,'$.owner')=:availableTo)");v.availableTo=String(q.availableTo);}
   if(q.afterSequence!==undefined){where.push('CAST(substr(id,4) AS INTEGER)>:afterSequence');v.afterSequence=Number(q.afterSequence)||0;}
   const base='WITH a AS (SELECT *, '+canonical+' s, COALESCE('+rec+',0) rec FROM applications) ',filter=where.length?' WHERE '+where.join(' AND '):'';
   const total=this.db.prepare(base+'SELECT count(*) n FROM a'+filter).get(Object.fromEntries(Object.entries(v).filter(([k])=>k!=='now'))).n;
